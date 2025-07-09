@@ -1,0 +1,45 @@
+# Ignore Windows system folders and files
+AppData/
+Cookies/
+Documents/
+Local Settings/
+My Documents/
+NetHood/
+PrintHood/
+Recent/
+SendTo/
+Start Menu/
+Templates/
+ntuser.dat*
+NTUSER.DAT*
+
+# Ignore Codeium and Codemate folders
+.codeium/
+.codemate/
+
+# Ignore IDE and system files
+.vscode/
+*.log
+*.tmp
+*.bak
+
+# Ignore OneDrive folder
+OneDrive/
+
+# Ignore Downloads, Music, Videos, etc
+Downloads/
+Music/
+Videos/
+
+# Ignore other personal folders
+Favorites/
+Links/
+Saved Games/
+Searches/
+Contacts/
+
+# Ignore matplotlib cache
+.matplotlib/
+
+# Ignore Micromamba environment
+.micromamba/
