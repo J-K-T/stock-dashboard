@@ -1,51 +1,15 @@
-
-import yfinance as yf 
+import streamlit as st
+import yfinance as yf
 import pandas as pd
 import time
+from functools import lru_cache
+from yfinance import YFRateLimitError
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib.animation import FuncAnimation
+
+sns.set_theme(style="darkgrid")
 
 stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'BAC', 'DIS']
-
-def fetch_stock_data(symbol):
-    ticker = yf.Ticker(symbol)
-    hist = ticker.history(period='2d')
-    info = ticker.info
-
-    if len(hist) < 2:
-        return None
-
-    prev_close = hist['Close'][-2]
-    last_close = hist['Close'][-1]
-    price_change_pct = ((last_close - prev_close) / prev_close) * 100
-
-    prev_vol = hist['Volume'][-2]
-    last_vol = hist['Volume'][-1]
-    vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
-
-    pe_ratio = info.get('trailingPE', None)
-    dividend_yield = info.get('dividendYield', 0) or 0
-    market_cap = info.get('marketCap', 0) or 0
-
-    fifty_two_week_high = info.get('fiftyTwoWeekHigh', None)
-    if fifty_two_week_high and fifty_two_week_high != 0:
-        dist_52w_high_pct = ((last_close - fifty_two_week_high) / fifty_two_week_high) * 100
-    else:
-        dist_52w_high_pct = None
-
-    recommendation = info.get('recommendationMean', None)
-
-    return {
-        'Symbol': symbol,
-        'Price Change %': price_change_pct,
-        'Volume Change %': vol_change_pct,
-        'P/E Ratio': pe_ratio,
-        'Dividend Yield': dividend_yield * 100,
-        'Market Cap': market_cap,
-        'Dist from 52W High %': dist_52w_high_pct,
-        'Analyst Rec': recommendation
-    }
 
 def score_stock(stock):
     score = 0
@@ -85,87 +49,99 @@ def score_stock(stock):
 
     return score
 
+@lru_cache(maxsize=128)
+def fetch_stock_info(symbol):
+    ticker = yf.Ticker(symbol)
+    return ticker.info
+
+def fetch_batch_data(symbols):
+    try:
+        data = yf.download(symbols, period='2d', group_by='ticker', threads=True)
+    except YFRateLimitError:
+        st.warning("Rate limit hit, retrying after 60 seconds...")
+        time.sleep(60)
+        return fetch_batch_data(symbols)
+    return data
+
 def analyze_stocks(stock_list):
     data = []
+    hist_data = fetch_batch_data(stock_list)
     for symbol in stock_list:
-        stock = fetch_stock_data(symbol)
-        if stock is None:
-            print(f"Skipping {symbol} (insufficient data)")
+        try:
+            if symbol in hist_data.columns.levels[0]:
+                hist = hist_data[symbol]
+            else:
+                st.warning(f"Skipping {symbol}: no historical data")
+                continue
+
+            if len(hist) < 2:
+                st.warning(f"Skipping {symbol}: insufficient historical data")
+                continue
+
+            prev_close = hist['Close'].iloc[-2]
+            last_close = hist['Close'].iloc[-1]
+            price_change_pct = ((last_close - prev_close) / prev_close) * 100
+
+            prev_vol = hist['Volume'].iloc[-2]
+            last_vol = hist['Volume'].iloc[-1]
+            vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
+
+            info = fetch_stock_info(symbol)
+
+            pe_ratio = info.get('trailingPE', None)
+            dividend_yield = info.get('dividendYield', 0) or 0
+            market_cap = info.get('marketCap', 0) or 0
+
+            fifty_two_week_high = info.get('fiftyTwoWeekHigh', None)
+            if fifty_two_week_high and fifty_two_week_high != 0:
+                dist_52w_high_pct = ((last_close - fifty_two_week_high) / fifty_two_week_high) * 100
+            else:
+                dist_52w_high_pct = None
+
+            recommendation = info.get('recommendationMean', None)
+
+            stock = {
+                'Symbol': symbol,
+                'Price Change %': price_change_pct,
+                'Volume Change %': vol_change_pct,
+                'P/E Ratio': pe_ratio,
+                'Dividend Yield': dividend_yield * 100,
+                'Market Cap': market_cap,
+                'Dist from 52W High %': dist_52w_high_pct,
+                'Analyst Rec': recommendation
+            }
+
+            stock['Score'] = score_stock(stock)
+            data.append(stock)
+
+        except YFRateLimitError:
+            st.warning("Rate limit error encountered. Sleeping for 60 seconds...")
+            time.sleep(60)
             continue
-        stock['Score'] = score_stock(stock)
-        data.append(stock)
+        except Exception as e:
+            st.error(f"Error processing {symbol}: {e}")
+            continue
 
     df = pd.DataFrame(data)
     df = df.sort_values(by='Score', ascending=False)
     return df
 
-def live_track_and_plot(stock_symbols, interval=30, duration=5, alert_threshold=1.0):
-    print(f"Tracking and plotting stocks: {', '.join(stock_symbols)}")
-    print(f"Updating every {interval} seconds for {duration} minutes...\n")
-
-    initial_prices = {}
-    price_history = {sym: [] for sym in stock_symbols}
-    timestamps = []
-
-    for symbol in stock_symbols:
-        ticker = yf.Ticker(symbol)
-        price = ticker.info.get('regularMarketPrice', None)
-        if price is None:
-            print(f"Warning: Could not fetch initial price for {symbol}")
-            price = 0
-        initial_prices[symbol] = price
-        price_history[symbol].append(price)
-
-    start_time = time.time()
-    end_time = start_time + duration * 60
-
-    sns.set_theme(style="darkgrid")
+def plot_scores(df):
     fig, ax = plt.subplots(figsize=(10, 6))
-    lines = {}
-    for sym in stock_symbols:
-        (line,) = ax.plot([], [], label=sym)
-        lines[sym] = line
+    sns.barplot(x='Score', y='Symbol', data=df, ax=ax, palette="viridis")
+    ax.set_title('Stock Scores')
+    st.pyplot(fig)
 
-    ax.set_title('Live Stock Prices')
-    ax.set_xlabel('Time (HH:MM:SS)')
-    ax.set_ylabel('Price ($)')
-    ax.legend()
+def main():
+    st.title("📈 Advanced Stock Analyzer with Batch Data & Caching")
 
-    def update(frame):
-        current_time = time.time()
-        if current_time > end_time:
-            print("Tracking complete.")
-            plt.close(fig)
-            return
+    selected_stocks = st.multiselect("Select stocks to analyze", stocks, default=stocks)
 
-        timestamps.append(time.strftime("%H:%M:%S"))
-        for sym in stock_symbols:
-            ticker = yf.Ticker(sym)
-            price = ticker.info.get('regularMarketPrice', None)
-            if price is None:
-                price = price_history[sym][-1] if price_history[sym] else 0
-            price_history[sym].append(price)
-
-            initial_price = initial_prices[sym]
-            if initial_price > 0:
-                change_pct = ((price - initial_price) / initial_price) * 100
-                if abs(change_pct) >= alert_threshold:
-                    print(f"ALERT: {sym} price changed by {change_pct:.2f}% from start price (${initial_price:.2f} → ${price:.2f})")
-
-            lines[sym].set_data(timestamps, price_history[sym])
-
-        ax.relim()
-        ax.autoscale_view()
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-
-    ani = FuncAnimation(fig, update, interval=interval*1000)
-    plt.show()
+    if st.button("Analyze"):
+        with st.spinner("Fetching and analyzing stock data..."):
+            analyzed_df = analyze_stocks(selected_stocks)
+            st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %', 'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
+            plot_scores(analyzed_df)
 
 if __name__ == "__main__":
-    print("Analyzing stocks with deeper metrics...")
-    analyzed_df = analyze_stocks(stocks)
-    print(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %', 'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
-
-    to_track = analyzed_df.head(5)['Symbol'].tolist()
-    live_track_and_plot(to_track, interval=30, duration=3, alert_threshold=1.0)
+    main()
