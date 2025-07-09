@@ -78,13 +78,13 @@ def analyze_stocks(stock_list):
                 st.warning(f"Skipping {symbol}: insufficient historical data")
                 continue
 
-prev_close = hist['Close'].iloc[-2]
-last_close = hist['Close'].iloc[-1]
-price_change_pct = ((last_close - prev_close) / prev_close) * 100
+            prev_close = hist['Close'].iloc[-2]
+            last_close = hist['Close'].iloc[-1]
+            price_change_pct = ((last_close - prev_close) / prev_close) * 100
 
-prev_vol = hist['Volume'].iloc[-2]
-last_vol = hist['Volume'].iloc[-1]
-vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
+            prev_vol = hist['Volume'].iloc[-2]
+            last_vol = hist['Volume'].iloc[-1]
+            vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
 
             info = fetch_stock_info(symbol)
 
@@ -140,7 +140,8 @@ def main():
     if st.button("Analyze"):
         with st.spinner("Fetching and analyzing stock data..."):
             analyzed_df = analyze_stocks(selected_stocks)
-            st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %', 'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
+            st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %',
+                                      'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
             plot_scores(analyzed_df)
 
 if __name__ == "__main__":
