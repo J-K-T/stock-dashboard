@@ -9,8 +9,10 @@ import seaborn as sns
 
 sns.set_theme(style="darkgrid")
 
+# Predefined stock symbols
 stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'BAC', 'DIS']
 
+# Scoring function
 def score_stock(stock):
     score = 0
 
@@ -49,11 +51,13 @@ def score_stock(stock):
 
     return score
 
+# Cache info to reduce API calls
 @lru_cache(maxsize=128)
 def fetch_stock_info(symbol):
     ticker = yf.Ticker(symbol)
     return ticker.info
 
+# Download historical data
 def fetch_batch_data(symbols):
     try:
         data = yf.download(symbols, period='2d', group_by='ticker', threads=True)
@@ -63,6 +67,7 @@ def fetch_batch_data(symbols):
         return fetch_batch_data(symbols)
     return data
 
+# Analyze and score stocks
 def analyze_stocks(stock_list):
     data = []
     hist_data = fetch_batch_data(stock_list)
@@ -78,13 +83,13 @@ def analyze_stocks(stock_list):
                 st.warning(f"Skipping {symbol}: insufficient historical data")
                 continue
 
-prev_close = hist['Close'].iloc[-2]
-last_close = hist['Close'].iloc[-1]
-price_change_pct = ((last_close - prev_close) / prev_close) * 100
+            prev_close = hist['Close'].iloc[-2]
+            last_close = hist['Close'].iloc[-1]
+            price_change_pct = ((last_close - prev_close) / prev_close) * 100
 
-prev_vol = hist['Volume'].iloc[-2]
-last_vol = hist['Volume'].iloc[-1]
-vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
+            prev_vol = hist['Volume'].iloc[-2]
+            last_vol = hist['Volume'].iloc[-1]
+            vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
 
             info = fetch_stock_info(symbol)
 
@@ -126,12 +131,14 @@ vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 
     df = df.sort_values(by='Score', ascending=False)
     return df
 
+# Plot stock scores
 def plot_scores(df):
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(x='Score', y='Symbol', data=df, ax=ax, palette="viridis")
     ax.set_title('Stock Scores')
     st.pyplot(fig)
 
+# Streamlit app entry point
 def main():
     st.title("📈 Advanced Stock Analyzer with Batch Data & Caching")
 
@@ -140,7 +147,8 @@ def main():
     if st.button("Analyze"):
         with st.spinner("Fetching and analyzing stock data..."):
             analyzed_df = analyze_stocks(selected_stocks)
-            st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %', 'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
+            st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %',
+                                      'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
             plot_scores(analyzed_df)
 
 if __name__ == "__main__":
