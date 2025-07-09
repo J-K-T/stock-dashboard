@@ -1,7 +1,9 @@
-import yfinance as yf
+
+import yfinance as yf 
 import pandas as pd
 import time
 import matplotlib.pyplot as plt
+import seaborn as sns
 from matplotlib.animation import FuncAnimation
 
 stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'BAC', 'DIS']
@@ -13,7 +15,7 @@ def fetch_stock_data(symbol):
 
     if len(hist) < 2:
         return None
-    
+
     prev_close = hist['Close'][-2]
     last_close = hist['Close'][-1]
     price_change_pct = ((last_close - prev_close) / prev_close) * 100
@@ -98,10 +100,6 @@ def analyze_stocks(stock_list):
     return df
 
 def live_track_and_plot(stock_symbols, interval=30, duration=5, alert_threshold=1.0):
-    """
-    Track stocks live with price chart updating every interval seconds for duration minutes.
-    Alerts if price moves up/down by alert_threshold % from initial price.
-    """
     print(f"Tracking and plotting stocks: {', '.join(stock_symbols)}")
     print(f"Updating every {interval} seconds for {duration} minutes...\n")
 
@@ -109,7 +107,6 @@ def live_track_and_plot(stock_symbols, interval=30, duration=5, alert_threshold=
     price_history = {sym: [] for sym in stock_symbols}
     timestamps = []
 
-    # Initialize initial prices
     for symbol in stock_symbols:
         ticker = yf.Ticker(symbol)
         price = ticker.info.get('regularMarketPrice', None)
@@ -122,8 +119,7 @@ def live_track_and_plot(stock_symbols, interval=30, duration=5, alert_threshold=
     start_time = time.time()
     end_time = start_time + duration * 60
 
-    # Setup matplotlib figure and axes
-    plt.style.use('seaborn-darkgrid')
+    sns.set_theme(style="darkgrid")
     fig, ax = plt.subplots(figsize=(10, 6))
     lines = {}
     for sym in stock_symbols:
@@ -150,20 +146,16 @@ def live_track_and_plot(stock_symbols, interval=30, duration=5, alert_threshold=
                 price = price_history[sym][-1] if price_history[sym] else 0
             price_history[sym].append(price)
 
-            # Check alert
             initial_price = initial_prices[sym]
             if initial_price > 0:
                 change_pct = ((price - initial_price) / initial_price) * 100
                 if abs(change_pct) >= alert_threshold:
                     print(f"ALERT: {sym} price changed by {change_pct:.2f}% from start price (${initial_price:.2f} → ${price:.2f})")
 
-            # Update line data
             lines[sym].set_data(timestamps, price_history[sym])
 
         ax.relim()
         ax.autoscale_view()
-
-        # Rotate x-axis labels for readability
         plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
 
@@ -174,6 +166,6 @@ if __name__ == "__main__":
     print("Analyzing stocks with deeper metrics...")
     analyzed_df = analyze_stocks(stocks)
     print(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %', 'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
-    
+
     to_track = analyzed_df.head(5)['Symbol'].tolist()
     live_track_and_plot(to_track, interval=30, duration=3, alert_threshold=1.0)
