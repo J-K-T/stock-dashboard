@@ -8,10 +8,36 @@ import seaborn as sns
 
 sns.set_theme(style="darkgrid")
 
-# Predefined stock symbols
-stocks = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'BAC', 'DIS']
+# Expanded stock list
+stocks = [
+    # 🏦 Mega Cap Tech
+    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META',
+    
+    # 🏛️ Financials
+    'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS',
+    
+    # 🛒 Consumer
+    'WMT', 'HD', 'COST', 'PG', 'KO', 'PEP', 'MCD', 'NKE',
+    
+    # 🛢️ Energy
+    'XOM', 'CVX', 'SLB', 'COP',
+    
+    # 💉 Healthcare
+    'JNJ', 'PFE', 'UNH', 'MRK', 'LLY', 'ABBV', 'TMO',
+    
+    # 🛰️ Industrials & Defense
+    'BA', 'GE', 'CAT', 'LMT', 'RTX', 'NOC',
+    
+    # 📶 Communications & Media
+    'DIS', 'NFLX', 'T', 'VZ', 'CMCSA',
+    
+    # 💳 Fintech
+    'V', 'MA', 'PYPL', 'SQ', 'AXP',
+    
+    # 📦 Misc
+    'UPS', 'FDX', 'ADBE', 'CRM', 'INTC', 'ORCL'
+]
 
-# Scoring function
 def score_stock(stock):
     score = 0
 
@@ -50,27 +76,20 @@ def score_stock(stock):
 
     return score
 
-# Cache info to reduce API calls
 @lru_cache(maxsize=128)
 def fetch_stock_info(symbol):
     ticker = yf.Ticker(symbol)
     return ticker.info
 
-# Download historical data
 def fetch_batch_data(symbols):
     try:
         data = yf.download(symbols, period='2d', group_by='ticker', threads=True)
-    except Exception as e:
-        if "Too many requests" in str(e):
-            st.warning("Rate limit hit, retrying after 60 seconds...")
-            time.sleep(60)
-            return fetch_batch_data(symbols)
-        else:
-            st.error(f"Unexpected download error: {e}")
-            return pd.DataFrame()
+    except Exception:
+        st.warning("Rate limit hit or data fetch error. Retrying...")
+        time.sleep(60)
+        return fetch_batch_data(symbols)
     return data
 
-# Analyze and score stocks
 def analyze_stocks(stock_list):
     data = []
     hist_data = fetch_batch_data(stock_list)
@@ -86,17 +105,13 @@ def analyze_stocks(stock_list):
                 st.warning(f"Skipping {symbol}: insufficient historical data")
                 continue
 
-            try:
-                prev_close = hist['Close'].iloc[-2]
-                last_close = hist['Close'].iloc[-1]
-                price_change_pct = ((last_close - prev_close) / prev_close) * 100
+            prev_close = hist['Close'].iloc[-2]
+            last_close = hist['Close'].iloc[-1]
+            price_change_pct = ((last_close - prev_close) / prev_close) * 100
 
-                prev_vol = hist['Volume'].iloc[-2]
-                last_vol = hist['Volume'].iloc[-1]
-                vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
-            except Exception as e:
-                st.error(f"Error calculating price/volume for {symbol}: {e}")
-                continue
+            prev_vol = hist['Volume'].iloc[-2]
+            last_vol = hist['Volume'].iloc[-1]
+            vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
 
             info = fetch_stock_info(symbol)
 
@@ -127,29 +142,23 @@ def analyze_stocks(stock_list):
             data.append(stock)
 
         except Exception as e:
-            if "Too many requests" in str(e):
-                st.warning("Rate limit error encountered. Sleeping for 60 seconds...")
-                time.sleep(60)
-            else:
-                st.error(f"Error processing {symbol}: {e}")
+            st.error(f"Error processing {symbol}: {e}")
             continue
 
     df = pd.DataFrame(data)
     df = df.sort_values(by='Score', ascending=False)
     return df
 
-# Plot stock scores
 def plot_scores(df):
     fig, ax = plt.subplots(figsize=(10, 6))
     sns.barplot(x='Score', y='Symbol', data=df, ax=ax, palette="viridis")
     ax.set_title('Stock Scores')
     st.pyplot(fig)
 
-# Streamlit app entry point
 def main():
     st.title("📈 Advanced Stock Analyzer with Batch Data & Caching")
 
-    selected_stocks = st.multiselect("Select stocks to analyze", stocks, default=stocks)
+    selected_stocks = st.multiselect("Select stocks to analyze", stocks, default=stocks[:10])
 
     if st.button("Analyze"):
         with st.spinner("Fetching and analyzing stock data..."):
