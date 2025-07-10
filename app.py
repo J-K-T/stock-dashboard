@@ -8,42 +8,19 @@ import seaborn as sns
 
 sns.set_theme(style="darkgrid")
 
-# Expanded stock list
+# Expanded list of stocks
 stocks = [
-    # 🏦 Mega Cap Tech
-    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META',
-    
-    # 🏛️ Financials
-    'JPM', 'BAC', 'WFC', 'C', 'GS', 'MS',
-    
-    # 🛒 Consumer
-    'WMT', 'HD', 'COST', 'PG', 'KO', 'PEP', 'MCD', 'NKE',
-    
-    # 🛢️ Energy
-    'XOM', 'CVX', 'SLB', 'COP',
-    
-    # 💉 Healthcare
-    'JNJ', 'PFE', 'UNH', 'MRK', 'LLY', 'ABBV', 'TMO',
-    
-    # 🛰️ Industrials & Defense
-    'BA', 'GE', 'CAT', 'LMT', 'RTX', 'NOC',
-    
-    # 📶 Communications & Media
-    'DIS', 'NFLX', 'T', 'VZ', 'CMCSA',
-    
-    # 💳 Fintech
-    'V', 'MA', 'PYPL', 'SQ', 'AXP',
-    
-    # 📦 Misc
-    'UPS', 'FDX', 'ADBE', 'CRM', 'INTC', 'ORCL'
+    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'BAC', 'DIS',
+    'NFLX', 'INTC', 'AMD', 'CSCO', 'ORCL', 'CRM', 'UBER', 'LYFT', 'PYPL', 'SQ',
+    'PEP', 'KO', 'WMT', 'COST', 'TGT', 'BA', 'GE', 'HON', 'MCD', 'SBUX',
+    'XOM', 'CVX', 'BP', 'TSM', 'BABA', 'NKE', 'ADBE', 'IBM', 'V', 'MA'
 ]
 
+# Score stocks based on various metrics
 def score_stock(stock):
     score = 0
-
     if stock['Price Change %'] is not None:
         score += max(min(stock['Price Change %'], 10), -10) * 3
-
     if stock['Volume Change %'] is not None:
         score += max(min(stock['Volume Change %'], 50), -50) * 0.4
 
@@ -79,13 +56,13 @@ def score_stock(stock):
 @lru_cache(maxsize=128)
 def fetch_stock_info(symbol):
     ticker = yf.Ticker(symbol)
-    return ticker.info
+    return ticker.info, ticker.news
 
 def fetch_batch_data(symbols):
     try:
         data = yf.download(symbols, period='2d', group_by='ticker', threads=True)
-    except Exception:
-        st.warning("Rate limit hit or data fetch error. Retrying...")
+    except Exception as e:
+        st.warning(f"Rate limit hit or error occurred: {e}. Retrying in 60 seconds...")
         time.sleep(60)
         return fetch_batch_data(symbols)
     return data
@@ -113,7 +90,7 @@ def analyze_stocks(stock_list):
             last_vol = hist['Volume'].iloc[-1]
             vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
 
-            info = fetch_stock_info(symbol)
+            info, _ = fetch_stock_info(symbol)
 
             pe_ratio = info.get('trailingPE', None)
             dividend_yield = info.get('dividendYield', 0) or 0
@@ -155,10 +132,26 @@ def plot_scores(df):
     ax.set_title('Stock Scores')
     st.pyplot(fig)
 
+def show_news_section(df):
+    st.markdown("## 📰 Recent News")
+    for _, row in df.iterrows():
+        symbol = row["Symbol"]
+        st.subheader(f"🗞️ {symbol} News")
+        try:
+            _, news = fetch_stock_info(symbol)
+            if news:
+                for article in news[:5]:
+                    st.markdown(f"- [{article['title']}]({article['link']})")
+            else:
+                st.markdown("_No news found._")
+        except Exception as e:
+            st.error(f"Could not load news for {symbol}: {e}")
+
 def main():
-    st.title("📈 Advanced Stock Analyzer with Batch Data & Caching")
+    st.title("📈 Advanced Stock Analyzer with Batch Data, News & Caching")
 
     selected_stocks = st.multiselect("Select stocks to analyze", stocks, default=stocks[:10])
+    show_news = st.checkbox("Show recent news articles", value=True)
 
     if st.button("Analyze"):
         with st.spinner("Fetching and analyzing stock data..."):
@@ -166,6 +159,9 @@ def main():
             st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %',
                                       'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
             plot_scores(analyzed_df)
+
+            if show_news:
+                show_news_section(analyzed_df)
 
 if __name__ == "__main__":
     main()
