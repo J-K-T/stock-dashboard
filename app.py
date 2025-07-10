@@ -8,19 +8,21 @@ import seaborn as sns
 
 sns.set_theme(style="darkgrid")
 
-# Expanded list of stocks
+# Extended stock list
 stocks = [
     'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'JPM', 'BAC', 'DIS',
-    'NFLX', 'INTC', 'AMD', 'CSCO', 'ORCL', 'CRM', 'UBER', 'LYFT', 'PYPL', 'SQ',
-    'PEP', 'KO', 'WMT', 'COST', 'TGT', 'BA', 'GE', 'HON', 'MCD', 'SBUX',
-    'XOM', 'CVX', 'BP', 'TSM', 'BABA', 'NKE', 'ADBE', 'IBM', 'V', 'MA'
+    'V', 'MA', 'PYPL', 'ADBE', 'NFLX', 'INTC', 'CSCO', 'ORCL', 'CRM', 'T',
+    'KO', 'PEP', 'MCD', 'WMT', 'CVX', 'XOM', 'BA', 'GS', 'CAT', 'GE',
+    'IBM', 'MMM', 'MDT', 'NEE', 'TXN', 'LIN', 'UNH', 'JNJ', 'PFE', 'MRK',
+    'AMGN', 'COST', 'LOW', 'HD', 'SBUX', 'QCOM', 'SPGI', 'BLK', 'AXP', 'BK'
 ]
 
-# Score stocks based on various metrics
 def score_stock(stock):
     score = 0
+
     if stock['Price Change %'] is not None:
         score += max(min(stock['Price Change %'], 10), -10) * 3
+
     if stock['Volume Change %'] is not None:
         score += max(min(stock['Volume Change %'], 50), -50) * 0.4
 
@@ -56,13 +58,13 @@ def score_stock(stock):
 @lru_cache(maxsize=128)
 def fetch_stock_info(symbol):
     ticker = yf.Ticker(symbol)
-    return ticker.info, ticker.news
+    return ticker.info
 
 def fetch_batch_data(symbols):
     try:
         data = yf.download(symbols, period='2d', group_by='ticker', threads=True)
     except Exception as e:
-        st.warning(f"Rate limit hit or error occurred: {e}. Retrying in 60 seconds...")
+        st.warning(f"Rate limit or download error, retrying after 60 seconds... {e}")
         time.sleep(60)
         return fetch_batch_data(symbols)
     return data
@@ -82,15 +84,19 @@ def analyze_stocks(stock_list):
                 st.warning(f"Skipping {symbol}: insufficient historical data")
                 continue
 
-            prev_close = hist['Close'].iloc[-2]
-            last_close = hist['Close'].iloc[-1]
-            price_change_pct = ((last_close - prev_close) / prev_close) * 100
+            try:
+                prev_close = hist['Close'].iloc[-2]
+                last_close = hist['Close'].iloc[-1]
+                price_change_pct = ((last_close - prev_close) / prev_close) * 100
 
-            prev_vol = hist['Volume'].iloc[-2]
-            last_vol = hist['Volume'].iloc[-1]
-            vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
+                prev_vol = hist['Volume'].iloc[-2]
+                last_vol = hist['Volume'].iloc[-1]
+                vol_change_pct = ((last_vol - prev_vol) / prev_vol) * 100 if prev_vol != 0 else 0
+            except Exception as e:
+                st.error(f"Error calculating price/volume changes for {symbol}: {e}")
+                continue
 
-            info, _ = fetch_stock_info(symbol)
+            info = fetch_stock_info(symbol)
 
             pe_ratio = info.get('trailingPE', None)
             dividend_yield = info.get('dividendYield', 0) or 0
@@ -132,26 +138,45 @@ def plot_scores(df):
     ax.set_title('Stock Scores')
     st.pyplot(fig)
 
-def show_news_section(df):
+def show_news_section(df, keywords=None):
     st.markdown("## 📰 Recent News")
+    keywords = [k.lower() for k in (keywords or ["earnings", "acquisition", "merger", "upgrade", "buyout"])]
+
     for _, row in df.iterrows():
         symbol = row["Symbol"]
         st.subheader(f"🗞️ {symbol} News")
         try:
-            _, news = fetch_stock_info(symbol)
-            if news:
-                for article in news[:5]:
-                    st.markdown(f"- [{article['title']}]({article['link']})")
-            else:
-                st.markdown("_No news found._")
+            ticker = yf.Ticker(symbol)
+            news_items = ticker.news
+            count = 0
+
+            for article in news_items:
+                title = article.get("title")
+                link = article.get("link")
+
+                if not title or not link:
+                    continue
+
+                if any(kw in title.lower() for kw in keywords):
+                    st.markdown(f"- [{title}]({link})")
+                    count += 1
+
+                if count >= 5:
+                    break
+
+            if count == 0:
+                st.markdown("_No relevant news found based on filters._")
+
         except Exception as e:
             st.error(f"Could not load news for {symbol}: {e}")
 
 def main():
-    st.title("📈 Advanced Stock Analyzer with Batch Data, News & Caching")
+    st.title("📈 Advanced Stock Analyzer with Batch Data, Caching & News")
 
-    selected_stocks = st.multiselect("Select stocks to analyze", stocks, default=stocks[:10])
-    show_news = st.checkbox("Show recent news articles", value=True)
+    selected_stocks = st.multiselect("Select stocks to analyze", stocks, default=stocks[:15])
+
+    keyword_input = st.text_input("Filter news by keywords (comma-separated):", "earnings, acquisition, merger, upgrade, buyout")
+    keywords = [k.strip().lower() for k in keyword_input.split(",")]
 
     if st.button("Analyze"):
         with st.spinner("Fetching and analyzing stock data..."):
@@ -159,9 +184,7 @@ def main():
             st.dataframe(analyzed_df[['Symbol', 'Score', 'Price Change %', 'Volume Change %',
                                       'P/E Ratio', 'Dividend Yield', 'Dist from 52W High %', 'Analyst Rec']])
             plot_scores(analyzed_df)
-
-            if show_news:
-                show_news_section(analyzed_df)
+            show_news_section(analyzed_df, keywords)
 
 if __name__ == "__main__":
     main()
